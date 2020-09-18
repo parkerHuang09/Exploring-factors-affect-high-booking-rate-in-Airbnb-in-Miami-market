@@ -1,8 +1,8 @@
 # Exploring-factors-affect-high-booking-rate-in-Airbnb-in-Miami-market
-This is my final project for course "Data Mining &amp; Predictive Analysis" at University of Maryland. (2020.05).
-My project topic is exploring factors that affect high booking rate in Airbnb Miami market. 
 
 Description
+
+This is my final project for course "Data Mining &amp; Predictive Analysis" at University of Maryland. (2020.05).
 We did a deep analysis on the Airbnb Miami market date using spatial mapping, classification, text mining, and modeling techniques. 
 After deeply and carefully analyzing these factors, we concluded that three factors we mention have substantial impacts on properties being frequently booked and can potentially create huge profit for investors if they follow our recommendations.
 
