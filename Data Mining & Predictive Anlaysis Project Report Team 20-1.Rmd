@@ -1,0 +1,698 @@
+---
+title: "Data Mining & Predictive Anlaysis Project Report"
+subtitle: 'Exploring factors affect high booking rate in Airbnb in Miami market'
+author:
+  - "Team 20"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+  html_notebook: default
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+
+# This chunk shows/hides the code in your final report. When echo = TRUE, the code
+# is shown in the report. When echo = FALSE, the code is hidden from the final report.
+# We would like to see your code, so please leave the setting as is during the course.
+# This chunk will not show up in your reports, so you can safely ignore its existence.
+
+knitr::opts_chunk$set(echo = TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=60))
+```
+
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+
+\begin{center}
+Market Assigned to team: \textbf{\underline{Miami}}
+\end{center}
+
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+\bigskip
+
+"We, the undersigned, certify that the report submitted is our own original work; all authors participated in the work in a substantive way; all authors have seen and apporved the report as submitted; the text, images, illustrations, and other items included in the manuscript do not carry any infringe/plagiarism issue upon any existing copyrighted materials"
+
+|Member| **Names of the signed team members**
+|:------------ | :------------:|
+|Contact Member | Weibo Chen |
+|Team member 2 | Jiading Chen |
+|Team member 3 | Wei-Cheng Huang |
+|Team member 4 | Changnan Jing |
+|Team member 5 | Wenzhe Wu |
+
+\newpage
+## Executive Summary
+As one of the most popular vacation cities, Miami attracts more than 20 millions visitors from all-over the world and therefore has a huge market for Airbnb. Understanding what visitors care about and looking for becomes significant for Airbnb investors. Supported by multiple research papers on hotel Industries, we infer that location, amenities and transportations can be contributing factors for Airbnb properties being frequently booked in Miami.
+
+We did a deep analysis on the Airbnb Miami market date using spatial mapping, classification, text mining, and modeling techniques. After deeply and carefully analyzing these factors, we concluded that three factors we mention have substantial impacts on properties being frequently booked and can potentially create huge profit for investors if they follow our recommendations. 
+
+
+## Research Question
+Before we step into analysis and build explanatory models, it is necessary to research and make sure we are on the right direction. We did a literature review and formed up our research questions for this Airbnb data. 
+
+1. Is location a key factor of success for Airbnb in a vacation city?
+
+    According to “A Study of Large Hotel Occupancy Rates on the Island of St. Lucia”,  
+    ![](E:/Dropbox/BUDT758T/project/figure 1.png){ width=50% }
+    
+    the location of hotels relative to tour sites and attractions, such as beaches and historic areas, are critical for success. Researchers investigated the importance of location or proximity of hotels, motels, guesthouses, and similar establishments to specific sites and believed that location is the top factor for tourists to make a decision. We are curious if this is also true for Airbnb business.
+
+2. Which neighbourhoods are mostly worthy for investment in Miami? 
+
+    Inspired by article _“The 9 Best Neighborhoods to Live in South Miami”_ by The Storage Queens, we would like to find out if there are some neighbourhoods outstandingly popular and/or possessing higher booking rates when comparing with other neighbourhoods. If they exist, we would like to know what and where are they.
+
+3. What factors are affecting the booking rate of Airbnb? 
+
+    According to _“Factors Affecting Hotel Occupancy Rate”_, researchers found that location, amenities and transportation are in the top ten factors of affecting the performance of a hotel. Again, we want to prove that this also works for Airbnb.
+
+\newpage
+## Methodology
+The Methodology contains three parts.
+
+1. Geographical Clustering
+2. Amenity information extraction
+3. Transportation information extraction
+
+The works will be explained in each division.
+```{r warning=FALSE,message=FALSE}
+library("tidyverse")
+library("ggplot2")
+library("plotly")
+library("skimr")
+library('rgdal')
+library('dbscan')
+library('caret')
+library("skimr")
+library("tidytext")
+library('stringr')
+```
+
+```{r}
+dfTrain <- read_csv('airbnbTrain.csv')
+#dfTest <- read_csv('airbnbTest.csv')
+```
+
+
+```{r}
+### Filter specific market 
+dfTrain_Miami <- dfTrain %>% filter(substr(`{randomControl}`,1,3) == 113)
+```
+
+### Geographical Clustering
+
+The location of property, as the research shown, is at the top of the most influencing feature of users preferance. In this part, we will try to find most valuable locations for airbnb hosts and investors.
+
+Let's see the Miami neighbourhood information first.
+```{r}
+
+dfTrain_Miami %>% 
+  select(neighbourhood) %>% 
+  mutate(valid=ifelse(is.na(neighbourhood),0,1)) %>% 
+  group_by(valid) %>% 
+  tally() %>% 
+  ungroup() %>% 
+  mutate(pct=n/sum(n))
+
+```
+
+Most Miami hosts didn't input their neighbourhood information, we need a detour.  
+The geographic data at hand is now only longitude and latitude,based on Longitude and Latitude, we can select KMeans, HC and DBSCAN as our canditating algorithms. They all perform good in clustering, but we finally chose DBSCAN to be our selection. 
+
+Comparing the other two algorithms, the selcetion of k value of KMeans can be too subjective to fit our model properly. What's more, KMeans and HC cannot handle the scenarios of clusters nested with others. However, in our model, the occurance of ‘urban villages’ are reasonable speculation. So, DBSCAN is our final choice.
+```{r}
+### Visualize the clusters
+dfgeo_Miami <- dfTrain_Miami %>% 
+  select(id,high_booking_rate,latitude,longitude)
+clusters <- dbscan(select(dfgeo_Miami,longitude,latitude), eps = 0.0079)
+dfgeo_Miami$cluster <- clusters$cluster
+
+groups <- dfgeo_Miami %>% filter(cluster != 0)
+noise <- dfgeo_Miami %>% filter(cluster == 0)
+ 
+clusterplot <- ggplot(dfgeo_Miami, aes(x = longitude, y = latitude, alpha = 0.5)) +
+  geom_point(aes(colour = as.factor(cluster)), groups,size = 3)
+#ggplotly(clusterplot)
+clusterplot
+```
+
+Eps value was tuned based on several iterations. With the increase of eps, the number of cluster decreases. As the host of houses, they always would like to know where is the best location specifically. However, the more cluster doesn’t mean a better clustering. 
+
+So, how many clusters are reasonable for this problem? According to Wikipedia, Miami-Dade County has nineteen cities, six towns, and nine villages. If the division is too detailed, it means that there may be 1 or 2 observations in one cluster, which is not convincing. If the division is too broad, variance among one division may also be high. Considering the division of clusters doesn’t have to follow Administrative division, so, the number of clusters can range from 30 to 50, and the least number of observation in one division should not be less than 5.
+```{r}
+### Visualize the percent of high_booking_rate within each cluster
+dfgeo_Miami %>% 
+  group_by(cluster) %>% 
+  mutate(pct = 100*sum(high_booking_rate)/length(high_booking_rate)) %>%
+  group_by(cluster,pct) %>% 
+  tally() %>% 
+  ggplot(aes(x = as.factor(cluster), y = pct)) +
+  geom_bar(stat="identity")
+```
+
+Now we have the range of the number of clusters, while determining the best division, the percentage is also an important attribute. We can focus on the percentage of houses having a high booking rate out of all houses in that geographical community. On the contrary, the locations that have a lower percentage will be the least considered. As a result, the quality of clustering can be reflected as the ratio of 'extreme' clusterings. If the percentage is mediocre, which is around 50%, we cannot recommend to new owners that this is a good place that can bring you a great fortune or not. Here, we calculate the result that the number of so called ‘valid rows’ divided by all number of rows to be our clustering quality attribute. we consider that it is a good clustering result when the number of clusters whose high booking rate percentage are more than 70% or less than 30% occupies the majority of all clusters. 
+```{r}
+### Verryfing if the eps parameter satisfies our requirements
+### (with iterations but only shows the best parameter(eps=0.0079) outputs)
+dfgeo_Miami %>% 
+  group_by(cluster) %>% 
+  mutate(pct = 100*sum(high_booking_rate)/length(high_booking_rate)) %>%
+  group_by(cluster,pct) %>% 
+  tally() %>% 
+  arrange(desc(pct))
+
+dfgeo_Miami %>% 
+  group_by(cluster) %>% 
+  mutate(pct = 100*sum(high_booking_rate)/length(high_booking_rate)) %>%
+  group_by(cluster,pct) %>% 
+  tally() %>% 
+  ungroup() %>% 
+  summarise(pct_median=median(pct))
+
+rowcount_valid <- 
+  dfgeo_Miami %>% 
+  group_by(cluster) %>% 
+  mutate(pct = 100*sum(high_booking_rate)/length(high_booking_rate)) %>%
+  group_by(cluster,pct) %>% 
+  tally() %>% 
+  filter(pct > 70 | pct < 30) %>% 
+  nrow()
+
+rowcount <- 
+  dfgeo_Miami %>% 
+  group_by(cluster) %>% 
+  mutate(pct = 100*sum(high_booking_rate)/length(high_booking_rate)) %>%
+  group_by(cluster,pct) %>% 
+  tally() %>% 
+  nrow()
+
+rowcount_valid/rowcount
+```
+
+Finally, we found eps equals to 0.0079 could serve our purpose well. We will use this value as our clustering parameter.
+
+***
+
+
+
+### Amenity Exploration
+
+Next, We would like to find out which kind of amenities that will catch airbnb users' eye.
+
+Amenities that provide from airbnb hosts could definitly make a difference on users making their choices.
+
+The way we doing this is to first split text data in column "amenities" into information carrying atomic pieces. Then, by setting them as dummy variables, we can build a model to check which information has significant effect on explananing high booking rate.
+```{r}
+### Slice the whole dataset into a smaller one
+dfamenity_Miami <- dfTrain_Miami %>% 
+  select(id, high_booking_rate, amenities)
+
+### Text data cleaning
+dfamenity_Miami$amenities <- gsub('[0-9]+', '', dfamenity_Miami$amenities)
+dfamenity_Miami$amenities <- tolower(dfamenity_Miami$amenities)
+dfamenity_Miami$amenities <- gsub("[^[:alnum:][:space:],]",'',dfamenity_Miami$amenities)
+dfamenity_Miami$amenities <- gsub(' ','_',dfamenity_Miami$amenities)
+
+### Split text string into atomic word
+dfamenity_Miami_disjoint <-
+  dfamenity_Miami %>%
+  unnest_tokens(word, amenities) %>% 
+  anti_join(stop_words) 
+
+### Store low frequence words as a vector
+lowfreqword <- dfamenity_Miami_disjoint %>% 
+  filter(!is.na(word)) %>% 
+  group_by(word) %>% 
+  summarise(count=n()) %>% 
+  filter(count<=40) %>% 
+  select(word) %>% 
+  unlist() %>% 
+  unname()
+
+### Split amenities into a list
+t <- strsplit(dfamenity_Miami$amenities, split = ",")
+
+### Eliminate duplicate words and store them as a vector
+tags <- unique(str_trim(unlist(t)))
+tags <- c(tags)
+
+### Form up an id vs. dummy variables dataframe and assign dummy names
+df2 <- as.data.frame(
+  Reduce(
+    cbind, lapply(
+      tags, function(i) sapply(
+        t, function(j) +
+          (any(grepl(i, j, fixed=TRUE), 
+               na.rm = TRUE))))))
+names(df2) <- tags
+
+### Excluding low frequence words
+df2 <- df2[ , !(names(df2) %in% lowfreqword)]
+
+### Assign id to each row
+df2 <- df2 %>%   
+  mutate(id = dfamenity_Miami$id)
+
+### Merge dummy dataset back to original
+dfamenity_Miami_Dummy <- 
+  merge(x = dfamenity_Miami, y = df2, by = "id") %>% 
+  select(-amenities,-id) %>% 
+  mutate(high_booking_rate = as_factor(high_booking_rate))
+```
+
+We would like know which amenity contribute the most, therefore a lasso regression could do the job and we hope to check the varimp plot to draw our conclusions.
+```{r error=TRUE}
+lambdav <- 10^seq(-5,2,length=100)
+set.seed(123)
+fitlasso <- train(formula = high_booking_rate ~., family = "binomial", 
+                 data = dfamenity_Miami_Dummy,method='glmnet',
+                 trControl=trainControl(method='cv',number=10),
+                 tuneGrid=expand.grid(alpha=1,lambda=lambdav))
+varImp(fitlasso)$importance %>% 
+  rownames_to_column(var="Variables") %>% 
+  mutate(Importance=scales::percent(Overall/100)) %>% 
+  arrange(desc(Overall)) %>% 
+  as_tibble()
+```
+It seems lasso regression doesn't work, perhaps it is because the matrix being too sparse. Anyway, another detour to go.
+
+```{r}
+### Using logistic regression to check variables significant
+fitLRM<-
+  glm(formula = high_booking_rate ~., family = "binomial", data = dfamenity_Miami_Dummy)
+summary(fitLRM)
+```
+
+The logistic regression provide the results. However, 107 dummy variables are too much, we would prefer decrease the number. Stepwise selection is applied here to eliminate unnecessary variables.
+```{r}
+#Running this chunk could take considerable time, DO WITH CAUTION
+#library(MASS)
+#fitLRM2 <- fitLRM %>% stepAIC(trace = FALSE)
+#detach("package:MASS", unload = TRUE)
+fitLRM2 <- 
+  glm(formula = high_booking_rate ~ wifi + air_conditioning + pool + 
+    kitchen + gym + elevator + washer + dryer + self_checkin + 
+    building_staff + bed_linens + dishes_and_silverware + cleaning_before_checkout + 
+    waterfront + free_parking_on_premises + familykid_friendly + 
+    carbon_monoxide_detector + shampoo + laptop_friendly_workspace + 
+    microwave + coffee_maker + dishwasher + pets_allowed + first_aid_kit + 
+    host_greets_you + hair_dryer + safety_card + hour_checkin + 
+    private_entrance + single_level_home + bbq_grill + beach_essentials + 
+    other + beachfront + extra_pillows_and_blankets + ethernet_connection + 
+    luggage_dropoff_allowed + smart_lock + paid_parking_off_premises + 
+    doorman + suitable_for_events + high_chair + pocket_wifi + 
+    translation_missing_enhostingamenity + roomdarkening_shades + 
+    wide_doorway_to_guest_bathroom + wide_clearance_to_shower + 
+    dogs + game_console, family = "binomial", data = dfamenity_Miami_Dummy)
+summary(fitLRM2)
+```
+
+The reduced model Looks good. But with a careful observation, we found there are many variables share common dimensions, such as "pet allowed, dog", "wifi, pocket wifi". We prefer to manually decrease the information dimensions by our domain knowledge.
+```{r}
+### Divide 7 dimensions to reflect generalize 107 features
+entertaining <- 
+  c("wifi","pocket_wifi","air_conditioning",
+    "game_console","ethernet_connection","beach_essentials")
+
+key_features <- 
+  c("pool","kitchen","gym","bbq_grill")
+
+essentials <- 
+  c("washer","dryer","shampoo","coffee_maker",
+    "dishwasher","microwave",
+    "dishes_and_silverware","hair_dryer","high_chair",
+    "building_staff","bed_linens","extra_pillows_and_blankets")
+
+property_design <- 
+  c("elevator","wide_doorway_to_guest_bathroom",
+    "wide_clearance_to_shower","roomdarkening_shades",
+    "private_entrance","beachfront","waterfront",
+    "single_level_home","suitable_for_events",
+    "laptop_friendly_workspace","familykid_friendly")
+
+specialty <- 
+  c("self_checkin","hour_checkin","host_greets_you",
+    "luggage_dropoff_allowed","cleaning_before_checkout",
+    "paid_parking_off_premises","free_parking_on_premises")
+
+pet_rules <- 
+  c("dogs","dog","pets_allowed","cats","cat")
+
+safety <- 
+  c("first_aid_kit","smart_lock",
+    "safety_card","carbon_monoxide_detector","doorman")
+
+### Reforge the dataset with dummies
+dfamenity_Miami_Dummy_2 <- dfamenity_Miami_disjoint %>% 
+  select(-high_booking_rate) %>% 
+  mutate(entertaining = ifelse(word %in% entertaining, 1, 0),
+         key_features = ifelse(word %in% key_features, 1, 0),
+         essentials = ifelse(word %in% essentials, 1, 0),
+         property_design = ifelse(word %in% property_design, 1, 0),
+         specialty = ifelse(word %in% specialty, 1, 0),
+         pet_rules = ifelse(word %in% pet_rules, 1, 0),
+         safety = ifelse(word %in% safety, 1, 0)) %>% 
+  select(-word) %>% 
+  group_by(id) %>% 
+  mutate(entertaining=sum(entertaining),
+         key_features=sum(key_features),
+         essentials=sum(essentials),
+         property_design=sum(property_design),
+         specialty=sum(specialty),
+         pet_rules=sum(pet_rules),
+         safety=sum(safety)) %>% 
+  ungroup() %>% 
+  distinct(id, .keep_all = TRUE) %>% 
+  right_join(dfamenity_Miami, by="id") %>% 
+  mutate(entertaining = ifelse((entertaining==0|is.na(entertaining)), 0, 1),
+         key_features = ifelse((key_features==0|is.na(key_features)), 0, 1),
+         essentials = ifelse((essentials==0|is.na(essentials)), 0, 1),
+         property_design = ifelse((property_design==0|is.na(property_design)), 0, 1),
+         specialty = ifelse((specialty==0|is.na(specialty)), 0, 1),
+         pet_rules = ifelse((pet_rules==0|is.na(pet_rules)), 0, 1),
+         safety = ifelse((safety==0|is.na(safety)), 0, 1)) %>% 
+  select(-amenities)
+```
+
+Now we decreased the number of our dummy variables by repalcing them with dimension indicators, we hope to check how well our classification performs.
+```{r}
+### Chi-Square tests for each dummy variables
+chisq.test(dfamenity_Miami_Dummy_2$high_booking_rate,dfamenity_Miami_Dummy_2$entertaining)
+chisq.test(dfamenity_Miami_Dummy_2$high_booking_rate,dfamenity_Miami_Dummy_2$key_features)
+chisq.test(dfamenity_Miami_Dummy_2$high_booking_rate,dfamenity_Miami_Dummy_2$essentials)
+chisq.test(dfamenity_Miami_Dummy_2$high_booking_rate,dfamenity_Miami_Dummy_2$property_design)
+chisq.test(dfamenity_Miami_Dummy_2$high_booking_rate,dfamenity_Miami_Dummy_2$specialty)
+chisq.test(dfamenity_Miami_Dummy_2$high_booking_rate,dfamenity_Miami_Dummy_2$pet_rules)
+chisq.test(dfamenity_Miami_Dummy_2$high_booking_rate,dfamenity_Miami_Dummy_2$safety)
+```
+The "entertaining" doesn't work well; also, "pet allow" looks like on the verge of being knock out. But overall, we are satisfied with the results.
+
+We also would like to see how well they perform when we put them in a model simultaneously.
+```{r}
+### Rerun the logistic regression
+fitLRM3<-
+  glm(formula = high_booking_rate ~.-id, family = "binomial", data = dfamenity_Miami_Dummy_2)
+summary(fitLRM3)
+```
+The results shown that __entertaining__ are __pet_rules__ are not siginificant, providing limited contributions in explaining the high booking rate.
+
+To dig further information, we want to check the adjusted odds ratios (and confidence intervals) for all 7 dimensions
+```{r}
+suppressMessages(exp(cbind(coef(fitLRM3), confint(fitLRM3)))) 
+```
+To our surprise, "key feature", representing the dimension that the property includes facilities like "kitchen", "gym" are related to a low booking rate.
+
+***
+
+
+
+### Transportation
+
+
+Another important feature we are interested with is whether transportation information is another focus of airbnb users?
+
+Different to "amenities" that are filled in fixed format, "transit" are filled in free format, 
+meaning it could be much harder to find common expressions and extract useful information from "transit".
+
+The transportation information exploration will be quite similar to amenity.
+```{r}
+df_trainsit <- dfTrain_Miami %>% 
+  rename(reviewText = transit)
+df_trainsit$reviewText <- gsub('[0-9]+', '', df_trainsit$reviewText)
+df_trainsit$reviewText <- tolower(df_trainsit$reviewText)
+df_trainsit$reviewText <- gsub('[[:punct:] ]+|/|@|\\|',' ',df_trainsit$reviewText)
+
+dft_tidy <-
+  df_trainsit %>%
+  unnest_tokens(word, reviewText) %>% 
+  anti_join(stop_words) 
+
+### Show words those appeared more than 100 times
+dfwordcount <- dft_tidy %>% 
+  filter(!is.na(word)) %>% 
+  group_by(word) %>% 
+  summarise(count=n()) %>%  
+  filter(count>=100)
+dfwordcount %>% 
+  arrange(desc(count))
+```
+
+```{r}
+### Visualize the word frequence
+dfwordcount %>% 
+  arrange(desc(count)) %>% 
+  head(30) %>% 
+  ggplot(aes(reorder(word,count), count, fill = word)) +
+  geom_col(show.legend = TRUE) +
+  coord_flip() +
+  scale_x_reordered()
+```
+
+From the word vector, we used naked eye research and extract words related to transporation. 
+Then we assigned them into two main categories: _public_ or _rental+ride_.
+```{r}
+public <-  
+  c('bus', 'buses', 'busses', 'train', 'trains', 
+    'walk', 'walking', 'walkable', 'foot', 'bike',
+    'bikes', 'citibike', 'biking', 'bicycle', 'bicycles',
+    'bikeshare', 'rideshare', 'cycle', 'biketown', 'biki', 
+    'citibikes','pick', 'pickup', 'picks', 'scooters', 'scooter', 
+    'scoot','metro', 'subway', 'subways', 'rail', 'amtrak', 
+    'express', 'metrolink', 'railroad','shuttle', 'shuttles', 
+    'trolley', 'trolleys','commute')
+
+ride_rental <-  
+  c('uber', 'ubers', 'über', 'uberx',
+    'lyft', 'lyfts', 'cab', 'cabs', 
+    'taxi', 'taxis', 'car', 'cars', 
+    'driving', 'ride', 'rides', 'riding', 
+    'rental', 'rent', 'rentals', 'renting', 
+    'rented', 'streetcar', 'streetcars', 'zipcar')
+
+### Reforge the dataset with dummies
+dft_dummy <- dft_tidy %>% 
+  mutate(public = ifelse(word %in% public, 1, 0)) %>% 
+  mutate(ride_rental = ifelse(word %in% ride_rental, 1, 0)) %>% 
+  select(id,public,ride_rental) %>% 
+  group_by(id) %>% 
+  mutate(public=sum(public),
+         ride_rental=sum(ride_rental)) %>% 
+  ungroup() %>% 
+  distinct(id, .keep_all = TRUE) %>% 
+  right_join(select(dfTrain_Miami,id,high_booking_rate), by="id") %>% 
+  mutate(public = ifelse((public==0|is.na(public)), 0, 1),
+         ride_rental = ifelse((ride_rental==0|is.na(ride_rental)), 0, 1))
+```
+
+
+We would like to test how well our dummy variables work using the chi-square test.
+```{r}
+
+chisq.test(dft_dummy$high_booking_rate,dft_dummy$public)
+chisq.test(dft_dummy$high_booking_rate,dft_dummy$ride_rental)
+```
+The outputs are excellent, the dummy variables we made really do the trick to tell the difference between booking rate.
+
+Again, we also test whether they will affect each other while putting them together.
+```{r}
+
+fitLRM4<-
+  glm(formula = high_booking_rate ~.-id, family = "binomial", data = dft_dummy)
+summary(fitLRM4)
+
+```
+These two dummies still work very well.
+
+We also curious about the adjusted odds ratios for these two dummies
+```{r}
+suppressMessages(exp(cbind(coef(fitLRM4), confint(fitLRM4))))
+```
+It seems that people do care about transporation convenience. 
+However, public transportation in miami is not that attractive. Airbnb users in Miami are more care about private transportation feature.
+
+***
+
+\newpage
+
+## Results & Findings
+
+The results and Findings will also be divided in to 3 sections.
+
+### Geographical Clustering
+
+(obtaining the results)
+```{r}
+clusterplot
+dfgeo_Miami %>% 
+  group_by(cluster) %>% 
+  mutate(pct = 100*sum(high_booking_rate)/length(high_booking_rate)) %>%
+  group_by(cluster,pct) %>% 
+  tally() %>% 
+  arrange(desc(pct))
+
+dfgeo_Miami %>% 
+  group_by(cluster) %>% 
+  mutate(pct = 100*sum(high_booking_rate)/length(high_booking_rate)) %>%
+  group_by(cluster,pct) %>% 
+  tally() %>% 
+  ungroup() %>% 
+  summarise(pct_median=median(pct))
+```
+
+From the table we can see that clusters are not divded evenly. There are two clusters contain the majority of properties and the rests are divided by the remaining 47 clusters. 
+
+The median of high booking rate percent is 13.96, which is a good news for new investors that both of the two major clusters are above the 50th percentile. 
+However, cluster 2 has a much higher ranking than cluster 1. 
+Based on the geo-location, we found the properties in cluster 2 are clustered more close to the beachfront than cluster 1, which gives us a sign that properties at beachfront will enjoy a relatively high booking rate. 
+
+The highest booking rate clusters are cluster 39 and 3, cluster 39 is at . We suppose these two clusters are at the some famous tourist spot or wealthy suburb. 
+However, the data within clusters are too few and thus hard to make a persuasive recommendation: these two places might be good for sophisticated investors.
+
+One more insight from these two major clusters is that we considered the low percent rate in absolute values come from the homogenization of the properties within these two clusters. 
+Since many of the properties share very common geographical features, airbnb users will probably randomly pickup one property and hence causing the low absolute percent rate values. 
+Therefore, exploring other features that can make one's property more outstanding will be our future tasks.
+
+***
+
+### Amenity Exploration
+
+(Obtaining the results)
+```{r}
+summary(fitLRM3)
+```
+The results from the logistic regression model shown that __entertaining__ are __pet_rules__ are not siginificant.
+The reason we could think of is that some "dimensions" we hypothesized are not completely independent to others (not perpendicular in dimensions) and thus causes serious collinearity.
+
+```{r}
+suppressMessages(exp(cbind(coef(fitLRM3), confint(fitLRM3))))
+```
+Most of the results are as our expected except for "key features". We have no idea why hosts enlist facilities liks "gym", "pool", "grill", "kitchen" has an negative effect on high booking rate, and works so significantly.
+
+Overall, we are satisfied with our outputs. We hypothesized 7 dimensions to capture the features shown in amenities and most of them proved to be useful. 
+We would recommend investors and hosts to fill in the amenities that cover up these 7 dimensions as much as possible.
+
+***
+
+### Transportation
+
+(Obtaining the results)
+```{r}
+summary(fitLRM4)
+```
+The two dummies we proposed works well in reflecting the difference in booking rate.
+
+```{r}
+suppressMessages(exp(cbind(coef(fitLRM4), confint(fitLRM4))))
+```
+These results show that airbnb users do care about transportation convenience, and private transportation options like uber/lyft services or rental car services seems to be more decisive when compared to public transportation services to the factor of high booking rate. 
+This makes sense because most airbnb users in Miami are for tourism and private transportation options will enable them enjoy the vacations with more satisfaction. 
+Therefore we would recommend hosts and investors to fill in the transportation availability around their properties. Public options are good, but private options are better.
+
+\newpage
+
+## Conclusion & Discussion
+
+### **Conclusion**
+
+As a nutshell, we conclude our findings as follows:
+
+To achieve a high booking rate,
+
+1. Select a nice location. For a safe and long term investment, beachfront is always the best choice! 
+Besides that, somewhere around the center also looks promising. However, because of lacking sufficient data, this recommedation should be taken with caution and only for risk seekers: 
+The low observations and comparably high booking rate within those locations indicates they could be very promising new lands which are blind spots to other common players. 
+Chances are that investors could earn a great amount from those places.
+
+2. Fill in the amenities and cover up all 7 dimensions we generalized as much as possible:
+    + Entertaining
+    + Key features
+    + Pet allowance
+    + Safety
+    + Essentials
+    + Specialty
+    + Property Design
+
+3. Fill in the available transportation options around your properties. 
+Mention about how convenient to reach transportation from your properties will benefit the booking rate. 
+Mentioning public transportation is good, but mentioning private transportation options such as pickup services and rental car services availability are far better!
+
+
+***
+
+### **Limitation**
+
+Our research has several flaws.
+
+1. Since we lack neighbourhood information, we use geographical information and __Dbscan__ package to "reconstruct" the 'neighbourhood' information. 
+However, this method is data hungry and since our data is not very balanced, it segemented too many clusters with few observations, which makes us hard to draw some conclusions with confidence. 
+2. The dimension deduction in amenity infomation extraction is naive and no data support.
+Because of that, the dimensions we hypothesized are not completely successful: some of them are not completely independent to others.
+Conducting a principal component analysis on these amenity may produce more insights and better describing the latent dimensions that these amenities are representing.
+Also, we only verify those dimensions by qualitative analysis, a quantitative analysis may also prodive to which extent should a host describe about his/her property.
+3. Transportation text mining is much harder than we thought since the "transit" column in airbnb is in free format. 
+Currently we use bag of words --> filter stop word --> filter out least common words and then do naked eye research to find patterns.
+However, these processes could be misleading since:
+
+    1. Elminate some of the inputs carrying useful information.
+    
+        For example, input like "Next to 95" is saying this property being next to a bus station, but it will be eliminated after our cleaning processes. 
+        
+    2. Misclassifications due to ambiguity 
+    
+        Words like "rental", "renting" are ambiguous. We do not actually know if it is refering to hosts' rental property or rental car services. We consider them uniformly refering rental car services but can introduce potential misclassifications.
+
+***
+
+### **Future Research Plan**
+
+In our future research plan, we plan to
+
+1. Narrow our scope and focus on cluster 1 and 2 to find out what features made beachfront properties stand out.
+2. Try to dig deeper and, on the premise that if it is not caused by too few observations within clusters 3 and 39, explore which features make these two clusters have outstandingly high booking rate.
+3. Projecting the miami segementation map onto our data to divide it in a more reasonable and close to reality way.
+4. Find out the reason why "key features" in our hypothesis works on the opposite direction to our common understanding.
+5. Do a Principal Component Analysis on amenities to extract latent dimensions.
+6. Focus on explaining other features, such as:
+    + What qualify a host being a super host? 
+    + High booking rate doesn't necessarily relates to high revenue because it will require hosts spending more efforts on maintaining his/her properties, how to justify investors' investments within miami market?
+    
+\newpage
+
+## Reference
+Al Saleem, A. S. M. R., & Al-Juboori, N. F. M. (2013, October). Factors Affecting Hotels Occupancy Rate (An Empirical ... Retrieved May 8, 2020, from https://journal-archieves36.webs.com/142-159.pdf
+
+Kassambara, A. (2018, October 25). DBSCAN: Density-Based Clustering Essentials. Retrieved May 8, 2020, from https://www.datanovia.com/en/lessons/dbscan-density-based-clustering-essentials/
+
+Bhattacharyya, S. (2019, December 11). DBSCAN Algorithm: Complete Guide and Application with Python Scikit-Learn. Retrieved May 8, 2020, from https://towardsdatascience.com/dbscan-algorithm-complete-guide-and-application-with-python-scikit-learn-d690cbae4c5d
+
+The Storage Queens. (2018, March 15). The 9 Best Neighborhoods to Live in South Miami: CubeSmart. Retrieved from https://www.cubesmart.com/blog/city-guides/miami/the-9-best-neighborhoods-to-live-in-south-miami/
+
+\newpage
+
+## Appendix
+We mentioned in our presentation that we reached an AUC=1 in our sub-divided train-test pair in Miami Training set. It turned out the coding has some mistakes. 
+We reconstructed and tuned the codes to cover all of our information. 
+But because of the existence of extremely low observations in certain categories, the sub-train set and sub-test set can not be in the same shape.
+Therefore, we couldn't test the performance of our hypothesized dummy variables and this attempt is ceased.
