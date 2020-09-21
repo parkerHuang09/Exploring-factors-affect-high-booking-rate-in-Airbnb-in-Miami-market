@@ -1,4 +1,4 @@
-# Exploring-factors-affect-high-booking-rate-in-Airbnb-in-Miami-market by R
+# Exploring factors affect high booking rate in Airbnb in Miami market by R
 
 ## Description
 
